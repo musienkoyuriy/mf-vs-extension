@@ -1,11 +1,13 @@
 import * as fs from "fs";
-import * as esprima from "esprima";
+import { parseScript, Syntax } from "esprima";
 import fetch from "node-fetch";
 import {
   window,
   TreeDataProvider,
   TreeItem,
   TreeItemCollapsibleState,
+  EventEmitter,
+  Event,
 } from "vscode";
 import { FederatedRemoteTreeItem } from "./federatedRemoteTreeItem";
 import {
@@ -20,12 +22,25 @@ import { traverse } from "./ast-utils";
 const errorMessages = {
   noWorkspaceRoot: "MF: No workspace root.",
   noWebpackConfig: "MF: No webpack config found.",
+  remoteEntryError: "MF: Unable to read remote entry for",
 };
 
 export class FederatedRemotesProvider
   implements TreeDataProvider<FederatedRemoteTreeItem>
 {
   constructor(private workspaceRoot: string) {}
+
+  private _onDidChangeTreeData: EventEmitter<
+    FederatedRemoteTreeItem | undefined | null | void
+  > = new EventEmitter<FederatedRemoteTreeItem | undefined | null | void>();
+
+  readonly onDidChangeTreeData: Event<
+    FederatedRemoteTreeItem | undefined | null | void
+  > = this._onDidChangeTreeData.event;
+
+  public refresh(): void {
+    this._onDidChangeTreeData.fire();
+  }
 
   public getTreeItem(element: FederatedRemoteTreeItem): TreeItem {
     return element;
@@ -35,6 +50,7 @@ export class FederatedRemotesProvider
     element?: FederatedRemoteTreeItem
   ): Promise<FederatedRemoteTreeItem[]> {
     let remotes: MappedMFRemotes;
+    let remoteEntryBody: string;
 
     if (!this.workspaceRoot) {
       window.showInformationMessage(errorMessages.noWorkspaceRoot);
@@ -56,69 +72,86 @@ export class FederatedRemotesProvider
 
     if (!element) {
       return Promise.resolve(this.getFederatedRemotesFromConfig(remotes));
-    } else {
-      const remoteEntry = await fetch(element.description as string);
-      const remoteEntryBody = await remoteEntry.text();
-      const ast = esprima.parseScript(remoteEntryBody);
+    }
 
-      let expressionContainedModuleMap: any;
-      let moduleCode: string;
-
-      traverse(ast, (node: any) => {
-        if (
-          node.type === "ExpressionStatement" &&
-          (expressionContainedModuleMap = node.expression?.arguments?.find(
-            (arg: any) =>
-              arg.type === "Literal" &&
-              typeof arg.value === "string" &&
-              arg.value.startsWith("var moduleMap")
-          ))
-        ) {
-          moduleCode = expressionContainedModuleMap.value;
-        }
-      });
-
-      const nestedAst = esprima.parseScript(moduleCode!);
-      const moduleMapDeclaration = nestedAst.body[0] as any;
-      const exposedModulesAst =
-        moduleMapDeclaration.declarations[0].init.properties;
-
-      const exposedModulesMap = Array.from(exposedModulesAst).reduce(
-        (acc: Record<string, unknown>, prop: any) => {
-          let exposedModulePath = null;
-          traverse(prop, (node: any) => {
-            if (node.type === "Literal" && typeof node.value !== "undefined") {
-              exposedModulePath = node.value;
-            }
-          });
-          if (exposedModulePath) {
-            acc[prop.key?.value] = exposedModulePath ?? "";
-          }
-          return acc;
-        },
-        {}
-      );
-
-      const exposedEntries = Object.entries(exposedModulesMap);
-
-      if (exposedEntries.length === 0) {
+    try {
+      const response = await fetch(element.description as string);
+      if (!response.ok) {
+        window.showErrorMessage(
+          `${errorMessages.remoteEntryError} ${element.label} container.`
+        );
         return Promise.resolve([]);
       }
-
-      return exposedEntries.length === 0
-        ? Promise.resolve([])
-        : Promise.resolve(
-            exposedEntries.map((module: any) => {
-              const [modulePublicName, moduleLocalPath] = module;
-              return new FederatedRemoteTreeItem({
-                label: modulePublicName,
-                remoteEntry: moduleLocalPath,
-                collapsibleState: TreeItemCollapsibleState.None,
-                isExposedModule: true,
-              });
-            })
-          );
+      remoteEntryBody = await response.text();
+    } catch (_) {
+      window.showErrorMessage(
+        `${errorMessages.remoteEntryError} ${element.label} container.`
+      );
+      return Promise.resolve([]);
     }
+
+    const remoteEntrySyntaxTree = parseScript(remoteEntryBody);
+
+    let expressionContainedModuleMap: any;
+    let moduleCode: string;
+
+    traverse(remoteEntrySyntaxTree, (node: any) => {
+      if (
+        node.type === Syntax.ExpressionStatement &&
+        (expressionContainedModuleMap = node.expression?.arguments?.find(
+          (arg: any) =>
+            arg.type === Syntax.Literal &&
+            typeof arg.value === "string" &&
+            arg.value.startsWith("var moduleMap")
+        ))
+      ) {
+        moduleCode = expressionContainedModuleMap.value;
+      }
+    });
+
+    const moduleSyntaxTree = parseScript(moduleCode!);
+    const moduleMapDeclaration = moduleSyntaxTree.body[0] as any;
+    const exposedModulesAst =
+      moduleMapDeclaration.declarations[0].init.properties;
+
+    const exposedModulesMap = Array.from(exposedModulesAst).reduce(
+      (acc: Record<string, unknown>, prop: any) => {
+        let exposedModulePath = null;
+        traverse(prop, (node: any) => {
+          if (
+            node.type === Syntax.Literal &&
+            typeof node.value !== "undefined"
+          ) {
+            exposedModulePath = node.value;
+          }
+        });
+        if (exposedModulePath) {
+          acc[prop.key?.value] = exposedModulePath ?? "";
+        }
+        return acc;
+      },
+      {}
+    );
+
+    const exposedEntries = Object.entries(exposedModulesMap);
+
+    if (exposedEntries.length === 0) {
+      return Promise.resolve([]);
+    }
+
+    return exposedEntries.length === 0
+      ? Promise.resolve([])
+      : Promise.resolve(
+          exposedEntries.map((module: any) => {
+            const [modulePublicName, moduleLocalPath] = module;
+            return new FederatedRemoteTreeItem({
+              label: modulePublicName,
+              remoteEntry: moduleLocalPath,
+              collapsibleState: TreeItemCollapsibleState.None,
+              isExposedModule: true,
+            });
+          })
+        );
   }
 
   private getFederatedRemotesFromConfig(
@@ -161,15 +194,19 @@ export class FederatedRemotesProvider
 
     let configMetadata: WebpackConfigOptions = {
       configExists: true,
+      setURI(uri: string) {
+        this.fileUri = uri;
+        this.extension = uri.split(".").pop() as "js" | "ts";
+      },
     };
 
     try {
       fs.accessSync(jsConfigPathToResolve);
-      configMetadata.fileUri = jsConfigPathToResolve;
+      configMetadata.setURI(jsConfigPathToResolve);
     } catch (_) {
       try {
         fs.accessSync(tsConfigPathToResolve);
-        configMetadata.fileUri = tsConfigPathToResolve;
+        configMetadata.setURI(tsConfigPathToResolve);
       } catch (_) {
         configMetadata.configExists = false;
       }

@@ -1,56 +1,105 @@
 import * as fs from "fs";
-import * as esprima from "esprima";
+import { parseModule, Syntax, Program } from "esprima";
+import { parse as typescriptParse } from "@typescript-eslint/parser";
 import { traverse } from "./ast-utils";
 import { MFConfig, WebpackConfigOptions } from "./types";
 
-const mapAstToPlainJS = (mfPluginProperties: any[]): MFConfig => {
-  return Array.from(mfPluginProperties).reduce((acc: MFConfig, prop: any) => {
-    if (prop.value.type === "Literal") {
-      return {
-        ...acc,
-        [prop.key?.name]: prop.value.value,
-      };
+const resolveDynamicEntry = (ast: any, remoteEntry: string): string => {
+  const regexp = /\[(.+?)\]/g;
+  const matches = remoteEntry.match(regexp);
+
+  if (!matches || matches.length === 0) {
+    return remoteEntry;
+  }
+
+  const removeBrackets = (match: string) => match.slice(1, match.length - 1);
+  const matchesWithoutBrackets = matches.map(removeBrackets);
+
+  let transpiledMap = new Map();
+
+  traverse(ast, (node) => {
+    if (node.type === Syntax.VariableDeclaration) {
+      const neededDeclarator = node.declarations.find((declarator: any) => {
+        return matchesWithoutBrackets.includes(declarator.id.name);
+      });
+      if (!neededDeclarator) {
+        return;
+      }
+      const {
+        id: { name },
+        init: { value },
+      } = neededDeclarator;
+      transpiledMap.set(name, value);
     }
-    if (prop.value.type === "TemplateLiteral") {
-      return {
-        ...acc,
-        [prop.key?.name]: prop.value.quasis[0].value.cooked,
-      };
+  });
+
+  if (matches.length !== transpiledMap.size) {
+    throw new Error(
+      "MF: Can't resolve one of dynamic parameters in remote entry."
+    );
+  }
+
+  return remoteEntry.replaceAll(regexp, (match) => {
+    return transpiledMap.get(removeBrackets(match));
+  });
+};
+
+const mapAstToPlainJS = (ast: any, mfPluginProperties: any[]): MFConfig => {
+  return Array.from(mfPluginProperties).reduce((acc: MFConfig, prop: any) => {
+    if (prop.value.type === Syntax.Literal) {
+      acc[prop.key?.name] = resolveDynamicEntry(ast, prop.value.value);
+    }
+    if (prop.value.type === Syntax.TemplateLiteral) {
+      acc[prop.key?.name] = resolveDynamicEntry(
+        ast,
+        prop.value.quasis[0].value.cooked
+      );
     }
     if (
-      prop.value.type === "ObjectExpression" &&
+      prop.value.type === Syntax.ObjectExpression &&
       prop.key?.name === "remotes"
     ) {
-      return {
-        ...acc,
-        [prop.key.name]: mapAstToPlainJS(prop.value.properties),
-      };
+      acc[prop.key.name] = <Record<string, string>>(
+        mapAstToPlainJS(ast, prop.value.properties)
+      );
     }
     return acc;
   }, {});
 };
 
+const resolveWebpackConfigBody = (
+  config: WebpackConfigOptions
+): Program | any => {
+  const fileBody = fs.readFileSync(config.fileUri!).toString();
+
+  if (config.extension === "js") {
+    return parseModule(fileBody);
+  }
+
+  return typescriptParse(fileBody);
+};
+
 export const parseWebpackConfig = (config: WebpackConfigOptions) => {
-  const ast = esprima.parseModule(fs.readFileSync(config.fileUri!).toString());
+  const configSyntaxTree = resolveWebpackConfigBody(config);
 
   let mfPluginOptions: any;
 
-  traverse(ast, (node: any) => {
-    if (node.type !== "Property" || node.key.name !== "plugins") {
+  traverse(configSyntaxTree, (node: any) => {
+    if (node.type !== Syntax.Property || node.key.name !== "plugins") {
       return;
     }
     const mfPlugin: any = (Array.from(node.value.elements) || []).find(
       (pluginNode: any) => {
         return (
-          pluginNode.type === "NewExpression" &&
+          pluginNode.type === Syntax.NewExpression &&
           pluginNode.callee?.property?.name === "ModuleFederationPlugin"
         );
       }
     );
     mfPluginOptions = Array.from(mfPlugin?.arguments || []).find(
-      (pluginArgument: any) => pluginArgument.type === "ObjectExpression"
+      (pluginArgument: any) => pluginArgument.type === Syntax.ObjectExpression
     );
   });
 
-  return mapAstToPlainJS(mfPluginOptions.properties);
+  return mapAstToPlainJS(configSyntaxTree, mfPluginOptions.properties);
 };

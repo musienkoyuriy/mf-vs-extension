@@ -9,16 +9,51 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [
-    "onCommand:module-federation.helloWorld"
-  ],
   "main": "./dist/extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "moduleFederation.refreshEntry",
+        "title": "MF: Refresh federated remotes",
+        "icon": {
+          "dark": "resources/dark/refresh-dark.svg",
+          "light": "resources/dark/refresh-dark.svg"
+        }
+      }
+    ],
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "mf",
+          "title": "Module Federation",
+          "icon": "media/mf.svg"
+        }
+      ]
+    },
     "views": {
       "explorer": [
         {
           "id": "moduleFederation",
-          "name": "Module Federation"
+          "name": "Module Federation",
+          "icon": "media/mf.svg",
+          "contextualTitle": "Package Explorer"
+        }
+      ],
+      "mf": [
+        {
+          "id": "moduleFederation",
+          "name": "Module Federation",
+          "icon": "media/mf.svg",
+          "contextualTitle": "Package Explorer"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "moduleFederation.refreshEntry",
+          "when": "view == moduleFederation",
+          "group": "navigation"
         }
       ]
     }
@@ -42,18 +77,18 @@
     "@types/vscode": "^1.74.0",
     "@types/webpack": "^5.28.0",
     "@typescript-eslint/eslint-plugin": "^5.45.0",
-    "@typescript-eslint/parser": "^5.45.0",
     "@vscode/test-electron": "^2.2.0",
     "eslint": "^8.28.0",
     "glob": "^8.0.3",
     "mocha": "^10.1.0",
     "ts-loader": "^9.4.1",
-    "typescript": "^4.9.3",
+    "typescript": "^4.9.4",
     "webpack": "^5.75.0",
     "webpack-cli": "^5.0.0"
   },
   "dependencies": {
     "esprima": "^4.0.1",
-    "node-fetch": "^3.3.0"
+    "node-fetch": "^3.3.0",
+    "@typescript-eslint/parser": "^5.48.1"
   }
 }
