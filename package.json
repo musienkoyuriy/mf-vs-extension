@@ -3,6 +3,12 @@
   "displayName": "module-federation",
   "description": "",
   "version": "0.0.1",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/musienkoyuriy/mf-vs-extension"
+  },
   "engines": {
     "vscode": "^1.74.0"
   },
@@ -22,7 +28,7 @@
       }
     ],
     "viewsContainers": {
-      "panel": [
+      "activitybar": [
         {
           "id": "mf",
           "title": "Module Federation",
@@ -31,20 +37,12 @@
       ]
     },
     "views": {
-      "explorer": [
-        {
-          "id": "moduleFederation",
-          "name": "Module Federation",
-          "icon": "media/mf.svg",
-          "contextualTitle": "Package Explorer"
-        }
-      ],
       "mf": [
         {
           "id": "moduleFederation",
           "name": "Module Federation",
           "icon": "media/mf.svg",
-          "contextualTitle": "Package Explorer"
+          "contextualTitle": "Module Federation"
         }
       ]
     },
