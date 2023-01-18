@@ -10,6 +10,8 @@ export type FederatedRemoteTreeItemOptions = {
 export type WebpackConfigOptions = {
   configExists: boolean;
   fileUri?: string;
+  extension?: "js" | "ts";
+  setURI(uri: string): void;
 };
 
 export type MappedMFRemote = { remoteName: string; remoteEntryUrl: string };
