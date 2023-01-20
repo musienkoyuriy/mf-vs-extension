@@ -1,5 +1,5 @@
-import { window, workspace, ExtensionContext, commands } from "vscode";
-import { FederatedRemotesProvider } from "./federatedRemotesProvider";
+import { window, workspace, ExtensionContext, commands } from 'vscode';
+import { FederatedRemotesProvider } from './federatedRemotesProvider';
 
 export function activate(context: ExtensionContext): void {
   const rootPath =
@@ -9,12 +9,12 @@ export function activate(context: ExtensionContext): void {
 
   const federatedRemotesProvider = new FederatedRemotesProvider(rootPath!);
 
-  window.registerTreeDataProvider("moduleFederation", federatedRemotesProvider);
+  window.registerTreeDataProvider('moduleFederation', federatedRemotesProvider);
   context.subscriptions.push(
-    commands.registerCommand("moduleFederation.refreshEntry", () => {
+    commands.registerCommand('moduleFederation.refreshEntry', () => {
       federatedRemotesProvider.refresh();
       window.showInformationMessage(
-        "MF: Federated remotes were successfully refreshed"
+        'MF: Federated remotes were successfully refreshed'
       );
     })
   );
