@@ -18,6 +18,7 @@ import {
 } from './types';
 import { parseWebpackConfig } from './webpackConfigResolver';
 import { traverse } from './ast-utils';
+import { GlobalState, StateManager } from './stateManager';
 
 const errorMessages = {
   noWorkspaceRoot: 'MF: No workspace root.',
@@ -28,7 +29,11 @@ const errorMessages = {
 export class FederatedRemotesProvider
   implements TreeDataProvider<FederatedRemoteTreeItem>
 {
-  constructor(private workspaceRoot: string) {}
+  state: StateManager;
+
+  constructor(state: StateManager, private workspaceRoot: string) {
+    this.state = state;
+  }
 
   private _onDidChangeTreeData: EventEmitter<
     FederatedRemoteTreeItem | undefined | null | void
@@ -64,7 +69,22 @@ export class FederatedRemotesProvider
     }
 
     try {
-      remotes = this.mapRemotes(parseWebpackConfig(сonfigMetadata));
+      const config = parseWebpackConfig(сonfigMetadata);
+      const { remoteEntries } = this.state.read();
+
+      remotes = this.mapRemotes(config);
+
+      // Check if there are remote entries from external plugin. If so - map with received entries
+      if (remoteEntries && Object.keys(remoteEntries).length > 0) {
+        remotes = remotes.map((remoteEntry: MappedMFRemote) => {
+          return remoteEntry.remoteName in remoteEntries
+            ? {
+                remoteName: remoteEntry.remoteName,
+                remoteEntryUrl: remoteEntries[remoteEntry.remoteName],
+              }
+            : remoteEntry;
+        });
+      }
     } catch (error: any) {
       window.showErrorMessage(error.message);
       return Promise.resolve([]);
@@ -214,10 +234,11 @@ export class FederatedRemotesProvider
         );
         const commentStart = '/*!';
         const commentStartIndex = line?.indexOf(commentStart);
-        const srcRelativePath = line
-          ?.slice(commentStartIndex! + commentStart.length)
-          .trim()
-          .split(' ')[0];
+        const srcRelativePath: string =
+          line
+            ?.slice(commentStartIndex! + commentStart.length)
+            .trim()
+            .split(' ')[0] || '';
 
         return [key, srcRelativePath];
       });
