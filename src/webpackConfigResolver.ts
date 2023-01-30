@@ -1,8 +1,8 @@
-import * as fs from "fs";
-import { parseModule, Syntax, Program } from "esprima";
-import { parse as typescriptParse } from "@typescript-eslint/parser";
-import { traverse } from "./ast-utils";
-import { MFConfig, WebpackConfigOptions } from "./types";
+import * as fs from 'fs';
+import { parseModule, Syntax, Program } from 'esprima';
+import { parse as typescriptParse } from '@typescript-eslint/parser';
+import { traverse } from './ast-utils';
+import { MFConfig, WebpackConfigOptions } from './types';
 
 const resolveDynamicEntry = (ast: any, remoteEntry: string): string => {
   const regexp = /\[(.+?)\]/g;
@@ -57,7 +57,7 @@ const mapAstToPlainJS = (ast: any, mfPluginProperties: any[]): MFConfig => {
     }
     if (
       prop.value.type === Syntax.ObjectExpression &&
-      prop.key?.name === "remotes"
+      prop.key?.name === 'remotes'
     ) {
       acc[prop.key.name] = <Record<string, string>>(
         mapAstToPlainJS(ast, prop.value.properties)
@@ -72,7 +72,7 @@ const resolveWebpackConfigBody = (
 ): Program | any => {
   const fileBody = fs.readFileSync(config.fileUri!).toString();
 
-  if (config.extension === "js") {
+  if (config.extension === 'js') {
     return parseModule(fileBody);
   }
 
@@ -85,14 +85,14 @@ export const parseWebpackConfig = (config: WebpackConfigOptions) => {
   let mfPluginOptions: any;
 
   traverse(configSyntaxTree, (node: any) => {
-    if (node.type !== Syntax.Property || node.key.name !== "plugins") {
+    if (node.type !== Syntax.Property || node.key.name !== 'plugins') {
       return;
     }
     const mfPlugin: any = (Array.from(node.value.elements) || []).find(
       (pluginNode: any) => {
         return (
           pluginNode.type === Syntax.NewExpression &&
-          pluginNode.callee?.property?.name === "ModuleFederationPlugin"
+          pluginNode.callee?.property?.name === 'ModuleFederationPlugin'
         );
       }
     );

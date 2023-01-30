@@ -1,6 +1,6 @@
-import * as fs from "fs";
-import { parseScript, Syntax } from "esprima";
-import fetch from "node-fetch";
+import * as fs from 'fs';
+import { parseScript, Syntax } from 'esprima';
+import fetch from 'node-fetch';
 import {
   window,
   TreeDataProvider,
@@ -8,21 +8,21 @@ import {
   TreeItemCollapsibleState,
   EventEmitter,
   Event,
-} from "vscode";
-import { FederatedRemoteTreeItem } from "./federatedRemoteTreeItem";
+} from 'vscode';
+import { FederatedRemoteTreeItem } from './federatedRemoteTreeItem';
 import {
   MappedMFRemote,
   MappedMFRemotes,
   MFConfig,
   WebpackConfigOptions,
-} from "./types";
-import { parseWebpackConfig } from "./webpackConfigResolver";
-import { traverse } from "./ast-utils";
+} from './types';
+import { parseWebpackConfig } from './webpackConfigResolver';
+import { traverse } from './ast-utils';
 
 const errorMessages = {
-  noWorkspaceRoot: "MF: No workspace root.",
-  noWebpackConfig: "MF: No webpack config found.",
-  remoteEntryError: "MF: Unable to read remote entry for",
+  noWorkspaceRoot: 'MF: No workspace root.',
+  noWebpackConfig: 'MF: No webpack config found.',
+  remoteEntryError: 'MF: Unable to read remote entry for',
 };
 
 export class FederatedRemotesProvider
@@ -90,7 +90,7 @@ export class FederatedRemotesProvider
       return Promise.resolve([]);
     }
 
-    const remoteEntryBodyLines = remoteEntryBody.split("\n");
+    const remoteEntryBodyLines = remoteEntryBody.split('\n');
     const isDevMode = Boolean(
       remoteEntryBodyLines.find((line: string) =>
         line.includes('mode: "development"')
@@ -122,7 +122,7 @@ export class FederatedRemotesProvider
     traverse(remoteEntrySyntaxTree, (node: any) => {
       if (
         node.type === Syntax.VariableDeclaration &&
-        node.declarations[0].id.name === "moduleMap"
+        node.declarations[0].id.name === 'moduleMap'
       ) {
         moduleMapDeclarator = node.declarations[0];
       }
@@ -133,7 +133,7 @@ export class FederatedRemotesProvider
 
   private getExposedModulesPropsInDevMode(remoteEntrySyntaxTree: any): any[] {
     let expressionContainedModuleMap: any;
-    let moduleMapBody = "";
+    let moduleMapBody = '';
 
     traverse(remoteEntrySyntaxTree, (node: any) => {
       if (
@@ -141,8 +141,8 @@ export class FederatedRemotesProvider
         (expressionContainedModuleMap = node.expression?.arguments?.find(
           (arg: any) =>
             arg.type === Syntax.Literal &&
-            typeof arg.value === "string" &&
-            arg.value.startsWith("var moduleMap")
+            typeof arg.value === 'string' &&
+            arg.value.startsWith('var moduleMap')
         ))
       ) {
         moduleMapBody = expressionContainedModuleMap.value;
@@ -189,7 +189,7 @@ export class FederatedRemotesProvider
         traverse(prop, (node: any) => {
           if (
             node.type === Syntax.Literal &&
-            typeof node.value !== "undefined"
+            typeof node.value !== 'undefined'
           ) {
             exposedModulePath = node.value;
           }
@@ -212,12 +212,12 @@ export class FederatedRemotesProvider
         const line = remoteEntryBodyLines.find((line: string) =>
           line.includes(<string>value)
         );
-        const commentStart = "/*!";
+        const commentStart = '/*!';
         const commentStartIndex = line?.indexOf(commentStart);
         const srcRelativePath = line
           ?.slice(commentStartIndex! + commentStart.length)
           .trim()
-          .split(" ")[0];
+          .split(' ')[0];
 
         return [key, srcRelativePath];
       });
@@ -257,7 +257,7 @@ export class FederatedRemotesProvider
   }
 
   private receiveRemoteEntryURL(remoteEntry: string): string {
-    return remoteEntry.split("@")[1];
+    return remoteEntry.split('@')[1];
   }
 
   private getWebpackConfigMetadata(): WebpackConfigOptions {
@@ -268,7 +268,7 @@ export class FederatedRemotesProvider
       configExists: true,
       setURI(uri: string) {
         this.fileUri = uri;
-        this.extension = uri.split(".").pop() as "js" | "ts";
+        this.extension = uri.split('.').pop() as 'js' | 'ts';
       },
     };
 
