@@ -90,54 +90,16 @@ export class FederatedRemotesProvider
       return Promise.resolve([]);
     }
 
-    const remoteEntrySyntaxTree = parseScript(remoteEntryBody);
-
-    let expressionContainedModuleMap: any;
-    let moduleCode: string;
-
-    traverse(remoteEntrySyntaxTree, (node: any) => {
-      if (
-        node.type === Syntax.ExpressionStatement &&
-        (expressionContainedModuleMap = node.expression?.arguments?.find(
-          (arg: any) =>
-            arg.type === Syntax.Literal &&
-            typeof arg.value === "string" &&
-            arg.value.startsWith("var moduleMap")
-        ))
-      ) {
-        moduleCode = expressionContainedModuleMap.value;
-      }
-    });
-
-    const moduleSyntaxTree = parseScript(moduleCode!);
-    const moduleMapDeclaration = moduleSyntaxTree.body[0] as any;
-    const exposedModulesAst =
-      moduleMapDeclaration.declarations[0].init.properties;
-
-    const exposedModulesMap = Array.from(exposedModulesAst).reduce(
-      (acc: Record<string, unknown>, prop: any) => {
-        let exposedModulePath = null;
-        traverse(prop, (node: any) => {
-          if (
-            node.type === Syntax.Literal &&
-            typeof node.value !== "undefined"
-          ) {
-            exposedModulePath = node.value;
-          }
-        });
-        if (exposedModulePath) {
-          acc[prop.key?.value] = exposedModulePath ?? "";
-        }
-        return acc;
-      },
-      {}
+    const remoteEntryBodyLines = remoteEntryBody.split("\n");
+    const isDevMode = Boolean(
+      remoteEntryBodyLines.find((line: string) =>
+        line.includes('mode: "development"')
+      )
     );
-
-    const exposedEntries = Object.entries(exposedModulesMap);
-
-    if (exposedEntries.length === 0) {
-      return Promise.resolve([]);
-    }
+    const exposedEntries = this.extractExposedModules(remoteEntryBody, {
+      isDevMode,
+      remoteEntryBodyLines,
+    });
 
     return exposedEntries.length === 0
       ? Promise.resolve([])
@@ -152,6 +114,116 @@ export class FederatedRemotesProvider
             });
           })
         );
+  }
+
+  private getExposedModulesPropsInProdMode(remoteEntrySyntaxTree: any): any[] {
+    let moduleMapDeclarator = null;
+
+    traverse(remoteEntrySyntaxTree, (node: any) => {
+      if (
+        node.type === Syntax.VariableDeclaration &&
+        node.declarations[0].id.name === "moduleMap"
+      ) {
+        moduleMapDeclarator = node.declarations[0];
+      }
+    });
+
+    return (<any>moduleMapDeclarator).init.properties;
+  }
+
+  private getExposedModulesPropsInDevMode(remoteEntrySyntaxTree: any): any[] {
+    let expressionContainedModuleMap: any;
+    let moduleMapBody = "";
+
+    traverse(remoteEntrySyntaxTree, (node: any) => {
+      if (
+        node.type === Syntax.ExpressionStatement &&
+        (expressionContainedModuleMap = node.expression?.arguments?.find(
+          (arg: any) =>
+            arg.type === Syntax.Literal &&
+            typeof arg.value === "string" &&
+            arg.value.startsWith("var moduleMap")
+        ))
+      ) {
+        moduleMapBody = expressionContainedModuleMap.value;
+      }
+    });
+
+    const moduleMapSyntaxTree = parseScript(moduleMapBody);
+    return (<any>moduleMapSyntaxTree.body[0]).declarations[0].init.properties;
+  }
+
+  private extractExposedModules(
+    remoteEntryBody: string,
+    extractOptions: {
+      remoteEntryBodyLines: string[];
+      isDevMode: boolean;
+    }
+  ): [string, unknown][] {
+    const remoteEntrySyntaxTree = parseScript(remoteEntryBody);
+    const { isDevMode } = extractOptions;
+
+    const exposedModulesProps = isDevMode
+      ? this.getExposedModulesPropsInDevMode(remoteEntrySyntaxTree)
+      : this.getExposedModulesPropsInProdMode(remoteEntrySyntaxTree);
+
+    const exposedModulesMap = this.mapExposedModulesToDictionary(
+      exposedModulesProps,
+      extractOptions
+    );
+
+    return exposedModulesMap;
+  }
+
+  private mapExposedModulesToDictionary(
+    exposedModulesProps: any[],
+    extractOptions: {
+      remoteEntryBodyLines: string[];
+      isDevMode: boolean;
+    }
+  ) {
+    const { remoteEntryBodyLines, isDevMode } = extractOptions;
+    let exposedModulesDictionary = Array.from(exposedModulesProps).reduce(
+      (acc: Record<string, unknown>, prop: any) => {
+        let exposedModulePath = null;
+        traverse(prop, (node: any) => {
+          if (
+            node.type === Syntax.Literal &&
+            typeof node.value !== "undefined"
+          ) {
+            exposedModulePath = node.value;
+          }
+        });
+        if (exposedModulePath) {
+          acc[prop.key?.value] = exposedModulePath;
+        }
+        return acc;
+      },
+      {}
+    );
+
+    let exposedEntries = Object.entries(exposedModulesDictionary);
+    if (exposedEntries.length === 0) {
+      return [];
+    }
+
+    if (!isDevMode) {
+      exposedEntries = exposedEntries.map(([key, value]) => {
+        const line = remoteEntryBodyLines.find((line: string) =>
+          line.includes(<string>value)
+        );
+        const commentStart = "/*!";
+        const commentStartIndex = line?.indexOf(commentStart);
+        const srcRelativePath = line
+          ?.slice(commentStartIndex! + commentStart.length)
+          .trim()
+          .split(" ")[0];
+
+        return [key, srcRelativePath];
+      });
+    }
+
+    return exposedEntries;
   }
 
   private getFederatedRemotesFromConfig(
