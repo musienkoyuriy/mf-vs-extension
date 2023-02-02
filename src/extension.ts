@@ -25,7 +25,6 @@ export function activate(context: ExtensionContext): void {
     state,
     rootPath!
   );
-
   window.registerTreeDataProvider('moduleFederation', federatedRemotesProvider);
   context.subscriptions.push(
     commands.registerCommand('moduleFederation.refreshEntry', () => {
