@@ -8,7 +8,7 @@ This extension allows to monitor and operate with federated remotes connected to
 - Displays information about federated containeres end exposed modules via `TreeView` in separare view container
 
 
-![Package Explorer](./media/mf.svg)
+![Package Explorer](./media/mf.png)
 
 ## Running locally
 
