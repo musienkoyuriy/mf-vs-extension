@@ -11,7 +11,7 @@ app.use(express.urlencoded({ extended: true }));
 export function deactivate(context: ExtensionContext): void {
   const state = stateManager(context);
 
-  state.write({ remoteEntries: undefined });
+  state.write({ remoteEntries: {} });
 }
 
 export function activate(context: ExtensionContext): void {

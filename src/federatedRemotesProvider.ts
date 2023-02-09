@@ -76,14 +76,10 @@ export class FederatedRemotesProvider
 
       // Check if there are remote entries from external plugin. If so - map with received entries
       if (remoteEntries && Object.keys(remoteEntries).length > 0) {
-        remotes = remotes.map((remoteEntry: MappedMFRemote) => {
-          return remoteEntry.remoteName in remoteEntries
-            ? {
-                remoteName: remoteEntry.remoteName,
-                remoteEntryUrl: remoteEntries[remoteEntry.remoteName],
-              }
-            : remoteEntry;
-        });
+        remotes = Object.entries(remoteEntries).map(([name, url]) => ({
+          remoteName: name,
+          remoteEntryUrl: url,
+        }));
       }
     } catch (error: any) {
       window.showErrorMessage(error.message);
@@ -92,6 +88,13 @@ export class FederatedRemotesProvider
 
     if (!element) {
       return Promise.resolve(this.getFederatedRemotesFromConfig(remotes));
+    }
+
+    if (element.description === 'promise') {
+      window.showInformationMessage(
+        `${element.label} remote entry is asynchronous and can be resolved only in runtime.`
+      );
+      return Promise.resolve([]);
     }
 
     try {
@@ -105,7 +108,7 @@ export class FederatedRemotesProvider
       remoteEntryBody = await response.text();
     } catch (_) {
       window.showErrorMessage(
-        `${errorMessages.remoteEntryError} ${element.label} container.`
+        `${errorMessages.remoteEntryError} ${element.label} container`
       );
       return Promise.resolve([]);
     }
