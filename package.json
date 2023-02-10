@@ -16,7 +16,9 @@
     "Other"
   ],
   "main": "./dist/extension.js",
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "commands": [
       {
@@ -87,6 +89,7 @@
     "webpack-cli": "^5.0.1"
   },
   "dependencies": {
+    "@babel/parser": "^7.20.15",
     "@typescript-eslint/parser": "^5.51.0",
     "esprima": "^4.0.1",
     "express": "^4.18.2",

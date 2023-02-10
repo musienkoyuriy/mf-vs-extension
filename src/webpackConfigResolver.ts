@@ -1,8 +1,9 @@
 import * as fs from 'fs';
-import { parseModule, Syntax, Program } from 'esprima';
 import { parse as typescriptParse } from '@typescript-eslint/parser';
+import { parse } from '@babel/parser';
 import { traverse } from './ast-utils';
 import { MFConfig, WebpackConfigOptions } from './types';
+import { ASTManager } from './ast-manager';
 
 const resolveDynamicEntry = (ast: any, remoteEntry: string): string => {
   const regexp = /\[(.+?)\]/g;
@@ -18,7 +19,7 @@ const resolveDynamicEntry = (ast: any, remoteEntry: string): string => {
   let transpiledMap = new Map();
 
   traverse(ast, (node) => {
-    if (node.type === Syntax.VariableDeclaration) {
+    if (node.type === 'VariableDeclaration') {
       const neededDeclarator = node.declarations.find((declarator: any) => {
         return matchesWithoutBrackets.includes(declarator.id.name);
       });
@@ -46,17 +47,17 @@ const resolveDynamicEntry = (ast: any, remoteEntry: string): string => {
 
 const mapAstToPlainJS = (ast: any, mfPluginProperties: any[]): MFConfig => {
   return Array.from(mfPluginProperties).reduce((acc: MFConfig, prop: any) => {
-    if (prop.value.type === Syntax.Literal) {
+    if (prop.value.type === 'Literal') {
       acc[prop.key?.name] = resolveDynamicEntry(ast, prop.value.value);
     }
-    if (prop.value.type === Syntax.TemplateLiteral) {
+    if (prop.value.type === 'TemplateLiteral') {
       acc[prop.key?.name] = resolveDynamicEntry(
         ast,
         prop.value.quasis[0].value.cooked
       );
     }
     if (
-      prop.value.type === Syntax.ObjectExpression &&
+      prop.value.type === 'ObjectExpression' &&
       prop.key?.name === 'remotes'
     ) {
       acc[prop.key.name] = <Record<string, string>>(
@@ -69,11 +70,11 @@ const mapAstToPlainJS = (ast: any, mfPluginProperties: any[]): MFConfig => {
 
 const resolveWebpackConfigBody = (
   config: WebpackConfigOptions
-): Program | any => {
+): any => {
   const fileBody = fs.readFileSync(config.fileUri!).toString();
 
   if (config.extension === 'js') {
-    return parseModule(fileBody);
+    return parse(fileBody);
   }
 
   return typescriptParse(fileBody);
@@ -81,24 +82,16 @@ const resolveWebpackConfigBody = (
 
 export const parseWebpackConfig = (config: WebpackConfigOptions) => {
   const configSyntaxTree = resolveWebpackConfigBody(config);
-
   let mfPluginOptions: any;
 
+  const astManager = new ASTManager(config.extension!);
+
   traverse(configSyntaxTree, (node: any) => {
-    if (node.type !== Syntax.Property || node.key.name !== 'plugins') {
+    if (!astManager.isPluginsNode(node)) {
       return;
     }
-    const mfPlugin: any = (Array.from(node.value.elements) || []).find(
-      (pluginNode: any) => {
-        return (
-          pluginNode.type === Syntax.NewExpression &&
-          pluginNode.callee?.property?.name === 'ModuleFederationPlugin'
-        );
-      }
-    );
-    mfPluginOptions = Array.from(mfPlugin?.arguments || []).find(
-      (pluginArgument: any) => pluginArgument.type === Syntax.ObjectExpression
-    );
+    const mfPlugin = astManager.getModuleFederationPluginNode(node);
+    mfPluginOptions = astManager.getModuleFederationPluginOptions(mfPlugin);
   });
 
   return mapAstToPlainJS(configSyntaxTree, mfPluginOptions.properties);

@@ -1,5 +1,6 @@
 import * as fs from 'fs';
-import { parseScript, Syntax } from 'esprima';
+import { parseScript } from 'esprima';
+import { parse } from '@babel/parser';
 import fetch from 'node-fetch';
 import {
   window,
@@ -18,7 +19,8 @@ import {
 } from './types';
 import { parseWebpackConfig } from './webpackConfigResolver';
 import { traverse } from './ast-utils';
-import { GlobalState, StateManager } from './stateManager';
+import { StateManager } from './stateManager';
+import { ASTManager } from './ast-manager';
 
 const errorMessages = {
   noWorkspaceRoot: 'MF: No workspace root.',
@@ -90,9 +92,9 @@ export class FederatedRemotesProvider
       return Promise.resolve(this.getFederatedRemotesFromConfig(remotes));
     }
 
-    if (element.description === 'promise') {
+    if (element.description === 'Runtime') {
       window.showInformationMessage(
-        `${element.label} remote entry is asynchronous and can be resolved only in runtime.`
+        `${element.label} remote entry is asynchronous and could be resolved only in runtime.`
       );
       return Promise.resolve([]);
     }
@@ -119,10 +121,14 @@ export class FederatedRemotesProvider
         line.includes('mode: "development"')
       )
     );
-    const exposedEntries = this.extractExposedModules(remoteEntryBody, {
-      isDevMode,
-      remoteEntryBodyLines,
-    });
+    const exposedEntries = this.extractExposedModules(
+      remoteEntryBody,
+      {
+        isDevMode,
+        remoteEntryBodyLines,
+      },
+      сonfigMetadata
+    );
 
     return exposedEntries.length === 0
       ? Promise.resolve([])
@@ -144,7 +150,7 @@ export class FederatedRemotesProvider
 
     traverse(remoteEntrySyntaxTree, (node: any) => {
       if (
-        node.type === Syntax.VariableDeclaration &&
+        node.type === 'VariableDeclaration' &&
         node.declarations[0].id.name === 'moduleMap'
       ) {
         moduleMapDeclarator = node.declarations[0];
@@ -154,25 +160,27 @@ export class FederatedRemotesProvider
     return (<any>moduleMapDeclarator).init.properties;
   }
 
-  private getExposedModulesPropsInDevMode(remoteEntrySyntaxTree: any): any[] {
+  private getExposedModulesPropsInDevMode(
+    remoteEntrySyntaxTree: any,
+    сonfigMetadata: WebpackConfigOptions
+  ): any[] {
     let expressionContainedModuleMap: any;
     let moduleMapBody = '';
 
+    const astManager = new ASTManager(сonfigMetadata.extension!);
+
     traverse(remoteEntrySyntaxTree, (node: any) => {
       if (
-        node.type === Syntax.ExpressionStatement &&
-        (expressionContainedModuleMap = node.expression?.arguments?.find(
-          (arg: any) =>
-            arg.type === Syntax.Literal &&
-            typeof arg.value === 'string' &&
-            arg.value.startsWith('var moduleMap')
-        ))
+        node.type === 'ExpressionStatement' &&
+        (expressionContainedModuleMap =
+          astManager.findNodeContainedModuleMap(node))
       ) {
         moduleMapBody = expressionContainedModuleMap.value;
       }
     });
 
     const moduleMapSyntaxTree = parseScript(moduleMapBody);
+
     return (<any>moduleMapSyntaxTree.body[0]).declarations[0].init.properties;
   }
 
@@ -181,13 +189,17 @@ export class FederatedRemotesProvider
     extractOptions: {
       remoteEntryBodyLines: string[];
       isDevMode: boolean;
-    }
+    },
+    сonfigMetadata: WebpackConfigOptions
   ): [string, unknown][] {
-    const remoteEntrySyntaxTree = parseScript(remoteEntryBody);
+    const remoteEntrySyntaxTree = parse(remoteEntryBody);
     const { isDevMode } = extractOptions;
 
     const exposedModulesProps = isDevMode
-      ? this.getExposedModulesPropsInDevMode(remoteEntrySyntaxTree)
+      ? this.getExposedModulesPropsInDevMode(
+          remoteEntrySyntaxTree,
+          сonfigMetadata
+        )
       : this.getExposedModulesPropsInProdMode(remoteEntrySyntaxTree);
 
     const exposedModulesMap = this.mapExposedModulesToDictionary(
@@ -210,10 +222,7 @@ export class FederatedRemotesProvider
       (acc: Record<string, unknown>, prop: any) => {
         let exposedModulePath = null;
         traverse(prop, (node: any) => {
-          if (
-            node.type === Syntax.Literal &&
-            typeof node.value !== 'undefined'
-          ) {
+          if (node.type === 'Literal' && typeof node.value !== 'undefined') {
             exposedModulePath = node.value;
           }
         });
